@@ -1,0 +1,168 @@
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Face Recognition</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+</head>
+<style>
+    @keyframes blink {
+        0% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0;
+        }
+
+        100% {
+            opacity: 1;
+        }
+    }
+
+    .blink {
+        animation: blink 1s infinite;
+    }
+</style>
+
+<body>
+
+    <div id="face-recognition" style="text-align:center;">
+        <h2>Face Recognition</h2>
+    </div>
+
+    <div id="webcam-container" style="text-align:center;">
+        <video id="webcam-feed" width="640" height="480" autoplay></video>
+    </div>
+
+    <div id="waiting-message" style="text-align:center; display: none;">
+        <p id="login-message"></p>
+        <p id="username"></p>
+    </div>
+
+    <div id="other-operations" style="text-align:center; display: none;">
+        <p>
+        <h1 class="blink">Waiting For Your Command</h1>
+        </p>
+        <h3 id="recognized-text" style="display: none;"></h3> <!-- Add an h3 tag to display recognized text -->
+        <div id="response-container"></div>
+    </div>
+    </div>
+
+    <script>
+        $(document).ready(function () {
+            var video = document.getElementById('webcam-feed');
+            var recognition = new webkitSpeechRecognition();
+            recognition.lang = "en-US"; // Set recognition language
+            var loggedIn = false; // Flag to track login status
+
+            // Request webcam access
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function (stream) {
+                    video.srcObject = stream;
+                })
+                .catch(function (err) {
+                    console.log("An error occurred: " + err);
+                });
+
+            // Capture frame from webcam and send to server for recognition
+            setInterval(function () {
+                var canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                var imageData = canvas.toDataURL('image/jpeg');
+
+                $.ajax({
+                    type: "POST",
+                    url: "/recognize",
+                    data: { image: imageData },
+                    success: function (response) {
+                        var name = response.name;
+                        if (name !== 'Unknown') {
+                            $('#login-message').text('Successfully logged in').show();
+                            $('#username').text('Username: ' + name).show();
+                            $('#waiting-message').show();
+                            $('#other-operations').show();
+                            loggedIn = true; // Update login status
+                            console.log("This works here");
+
+                            if (loggedIn) {
+                                try {
+                                    // Try starting recognition
+                                    recognition.start();
+                                } catch (error) {
+                                    // Handle error if recognition is already started
+                                    console.log('Recognition is already started.');
+                                }
+                            }
+                        } else {
+                            recognition.stop()
+                            $('#login-message').hide();
+                            $('#username').hide();
+                            $('#waiting-message').hide();
+                            $('#other-operations').hide();
+                            loggedIn = false; // Update login status
+                            console.log(loggedIn)
+                        }
+                    }
+                });
+            }, 1000); // Adjust the interval as needed
+
+            // Voice command recognition
+            recognition.onresult = function (event) {
+                if (loggedIn) { // Check if logged in   
+                    var command = event.results[0][0].transcript.trim().toLowerCase();
+                    console.log('Command:', command);
+                    $('#recognized-text').text('Recognized Text: ' + command).show(); // Display recognized text
+                    sendCommandToBackend(command);
+                }
+            };
+
+            recognition.onerror = function (event) {
+                console.log('Recognition error:', event.error);
+            };
+
+            // Function to send command to backend
+            function sendCommandToBackend(command) {
+                $.ajax({
+                    type: "POST",
+                    url: "/command",
+                    contentType: "application/json",
+                    data: JSON.stringify({ command: command }),
+                    success: function (response) {
+                        console.log('Response:', response);
+
+                        // Clear previous response list
+                        $('#response-container').empty();
+
+                        if (Array.isArray(response.response)) {
+                            // Loop through response array and create list items
+                            var message = "<ul>";
+                            for (var i = 0; i < response.response.length; i++) {
+                                message += "<li>" + response.response[i] + "</li>";
+                            }
+                            message += "</ul>";
+                            $('#response-container').append(message);
+                        } else {
+                            // Handle non-array responses (e.g., error messages)
+                            var message = "<p>" + response + "</p>";
+                            $('#response-container').append(message);
+                        }
+
+                        // Handle response from backend if needed (original code)
+                    },
+                    error: function (xhr, status, error) {
+                        console.error('Error:', error);
+                        // Handle error if needed
+                    }
+                });
+            }
+        });
+    </script>
+
+
+</body>
+
+</html>

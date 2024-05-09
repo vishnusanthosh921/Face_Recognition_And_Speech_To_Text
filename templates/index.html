@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+</head>
+
+<body>
+    <div id="face-recognition" style="text-align:center;">
+        <h2>Face Recognition</h2>
+    </div>
+
+    <div id="webcam-container" style="text-align:center;">
+        <video id="webcam-feed" width="640" height="480" autoplay></video>
+    </div>
+
+    <div id="waiting-message" style="text-align:center;">
+        <p id="login-message"></p>
+        <p id="username"></p>
+    </div>
+
+    <div id="other-operations" style="text-align:center; display: none;">
+        <p>
+        <h1 class="blink">Waiting For Your Command</h1>
+        </p>
+        <h3 id="recognized-text" style="display: none;"></h3>
+        <div id="response-container"></div>
+    </div>
+
+    <script>
+$(document).ready(function () {
+    var video = document.getElementById('webcam-feed');
+    var recognition = new webkitSpeechRecognition();
+    recognition.lang = "en-US";
+    var loggedIn = false;
+
+    navigator.mediaDevices.getUserMedia({ video: true })
+        .then(function (stream) {
+            video.srcObject = stream;
+        })
+        .catch(function (err) {
+            console.error("An error occurred: " + err);
+        });
+
+    setInterval(function () {
+        var canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        var imageData = canvas.toDataURL('image/jpeg');
+
+        $.ajax({
+            type: "POST",
+            url: "/hasface",
+            data: { image: imageData },
+            success: function (response) {
+                if (response.hasFace) {
+                    makeRecognizeAPICall(imageData);
+                } else {
+                    // If no face detected, reload the page
+                    location.reload();
+                }
+            },
+            error: function (xhr, status, error) {
+                console.error('Error:', error);
+            }
+        });
+    }, 1000);
+
+    function makeRecognizeAPICall(imageData) {
+        $.ajax({
+            type: "POST",
+            url: "/recognize",
+            data: { image: imageData },
+            success: function (response) {
+                var name = response.name;
+                if (name !== 'Unknown') {
+                    $('#login-message').text('Successfully logged in').show();
+                    $('#username').text('Username: ' + name).show();
+                    $('#waiting-message').show();
+                    $('#other-operations').show();
+                    loggedIn = true;
+
+                    if (loggedIn) {
+                        try {
+                            recognition.start();
+                        } catch (error) {
+                            console.error('Recognition is already started.');
+                        }
+                    }
+                } else {
+                    recognition.stop();
+                    $('#login-message').hide();
+                    $('#username').hide();
+                    $('#waiting-message').hide();
+                    $('#other-operations').hide();
+                    loggedIn = false;
+                }
+            },
+            error: function (xhr, status, error) {
+                console.error('Error:', error);
+            }
+        });
+    }
+
+    recognition.onresult = function (event) {
+        if (loggedIn) {
+            var command = event.results[0][0].transcript.trim().toLowerCase();
+            console.log('Command:', command);
+            $('#recognized-text').text('Recognized Text: ' + command).show();
+            sendCommandToBackend(command);
+        }
+    };
+
+    recognition.onerror = function (event) {
+        console.error('Recognition error:', event.error);
+    };
+
+    function sendCommandToBackend(command) {
+    $.ajax({
+        type: "POST",
+        url: "/command",
+        contentType: "application/json",
+        data: JSON.stringify({ command: command }),
+        success: function (response) {
+            console.log('Response:', response);
+
+            // Handle the response from the backend
+            if (response.response == "google") {
+                // Redirect to google.com
+                console.log("i am herrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrreeeeeeeeeeeee")
+                window.location.href = 'https://www.google.com';
+            } else {
+                // Clear previous response list
+                $('#response-container').empty();
+
+                if (Array.isArray(response.response)) {
+                    // Loop through response array and create list items
+                    var message = "<ul>";
+                    for (var i = 0; i < response.response.length; i++) {
+                        message += "<li>" + response.response[i] + "</li>";
+                    }
+                    message += "</ul>";
+                    $('#response-container').append(message);
+                } else {
+                    // Handle non-array responses (e.g., error messages)
+                    var message = "<p>" + response + "</p>";
+                    $('#response-container').append(message);
+                }
+            }
+        },
+        error: function (xhr, status, error) {
+            console.error('Error:', error);
+            // Handle error if needed
+        }
+    });
+}
+
+});
+
+
+    </script>
+</body>
+
+</html>
